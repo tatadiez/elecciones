@@ -1,0 +1,257 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Simulador Sistema D'Hondt - Argentina</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body {
+      font-family: "Segoe UI", Arial, sans-serif;
+      background: #f4f6f8;
+      margin: 0;
+      padding: 30px;
+    }
+
+    h2 {
+      text-align: center;
+      color: #333;
+    }
+
+    .container {
+      max-width: 950px;
+      margin: auto;
+      background: #fff;
+      padding: 25px 30px;
+      border-radius: 15px;
+      box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+    }
+
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 15px;
+    }
+
+    th, td {
+      border: 1px solid #e0e0e0;
+      padding: 10px;
+      text-align: center;
+    }
+
+    th {
+      background: #f7f7f7;
+      font-weight: 600;
+    }
+
+    input[type="text"],
+    input[type="number"] {
+      width: 90%;
+      padding: 6px 8px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      outline: none;
+      transition: 0.2s;
+    }
+
+    input[type="text"]:focus,
+    input[type="number"]:focus {
+      border-color: #007bff;
+      box-shadow: 0 0 3px rgba(0, 123, 255, 0.4);
+    }
+
+    button {
+      background: #007bff;
+      color: white;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      margin: 5px;
+      font-weight: 500;
+      transition: 0.2s;
+    }
+
+    button:hover {
+      background: #0056b3;
+    }
+
+    .chart-container {
+      width: 85%;
+      margin: 30px auto;
+    }
+
+    pre {
+      background: #f8f9fa;
+      border-radius: 8px;
+      padding: 15px;
+      border: 1px solid #e0e0e0;
+      overflow-x: auto;
+    }
+
+    .btn-container {
+      text-align: center;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h2>Simulador Sistema D'Hondt (Argentina)</h2>
+
+    <label for="totalBancas">Cantidad de bancas en disputa:</label>
+    <input type="number" id="totalBancas" value="35"><br><br>
+
+    <label for="votosBlancos">Votos en blanco:</label>
+    <input type="number" id="votosBlancos" value="0"><br><br>
+
+    <table id="tablaPartidos">
+      <tr>
+        <th>Lista / Frente</th>
+        <th>Votos</th>
+      </tr>
+      <tr>
+        <td><input type="text" value="Frente A"></td>
+        <td><input type="number" value="250000"></td>
+      </tr>
+      <tr>
+        <td><input type="text" value="Frente B"></td>
+        <td><input type="number" value="200000"></td>
+      </tr>
+      <tr>
+        <td><input type="text" value="Frente C"></td>
+        <td><input type="number" value="50000"></td>
+      </tr>
+    </table>
+
+    <div class="btn-container">
+      <button onclick="agregarFila()">➕ Agregar lista</button>
+      <button onclick="calcularDhondt()">📊 Calcular distribución</button>
+      <button onclick="descargarGrafico()">💾 Descargar gráfico</button>
+      <button onclick="limpiarCampos()">🧹 Limpiar todo</button>
+    </div>
+
+    <h3>Resultado:</h3>
+    <pre id="resultado"></pre>
+
+    <div class="chart-container">
+      <canvas id="grafico"></canvas>
+    </div>
+  </div>
+
+  <script>
+    let chart;
+
+    function agregarFila() {
+      const tabla = document.getElementById("tablaPartidos");
+      const fila = tabla.insertRow(-1);
+      const celda1 = fila.insertCell(0);
+      const celda2 = fila.insertCell(1);
+      celda1.innerHTML = '<input type="text" placeholder="Frente">';
+      celda2.innerHTML = '<input type="number" placeholder="Votos">';
+    }
+
+    function calcularDhondt() {
+      const filas = document.querySelectorAll("#tablaPartidos tr:not(:first-child)");
+      const totalBancas = parseInt(document.getElementById("totalBancas").value);
+      const votosBlancos = parseInt(document.getElementById("votosBlancos").value);
+      let partidos = [];
+
+      filas.forEach(fila => {
+        const nombre = fila.cells[0].querySelector("input").value.trim();
+        const votos = parseInt(fila.cells[1].querySelector("input").value) || 0;
+        if (nombre && votos > 0) partidos.push({ nombre, votos });
+      });
+
+      const totalVotosAfirmativos = partidos.reduce((sum, p) => sum + p.votos, 0);
+      const totalValidos = totalVotosAfirmativos + votosBlancos;
+      const umbral = totalValidos * 0.03;
+
+      partidos = partidos.filter(p => p.votos >= umbral);
+
+      let cocientes = [];
+      partidos.forEach(p => {
+        for (let i = 1; i <= totalBancas; i++) {
+          cocientes.push({ nombre: p.nombre, valor: p.votos / i });
+        }
+      });
+
+      cocientes.sort((a, b) => b.valor - a.valor);
+      cocientes = cocientes.slice(0, totalBancas);
+
+      let resultado = {};
+      partidos.forEach(p => resultado[p.nombre] = 0);
+      cocientes.forEach(c => resultado[c.nombre]++);
+
+      let texto = `🗳️ Total de votos válidos: ${totalValidos.toLocaleString()}\n📉 Umbral del 3%: ${Math.round(umbral).toLocaleString()} votos\n\nDistribución de bancas:\n`;
+      let labels = [], data = [], colores = [];
+
+      let i = 0;
+      for (let [nombre, bancas] of Object.entries(resultado)) {
+        const porcentaje = ((bancas / totalBancas) * 100).toFixed(1);
+        texto += `• ${nombre}: ${bancas} banca(s) (${porcentaje}%)\n`;
+        labels.push(nombre);
+        data.push(bancas);
+        colores.push(`hsl(${i * 50}, 70%, 55%)`);
+        i++;
+      }
+
+      document.getElementById("resultado").textContent = texto;
+
+      if (chart) chart.destroy();
+      const ctx = document.getElementById("grafico").getContext("2d");
+      chart = new Chart(ctx, {
+        type: "bar",
+        data: {
+          labels: labels,
+          datasets: [{
+            label: "Cantidad de bancas",
+            data: data,
+            backgroundColor: colores,
+            borderRadius: 10
+          }]
+        },
+        options: {
+          indexAxis: 'y',
+          scales: {
+            x: { beginAtZero: true, ticks: { precision: 0 } },
+            y: { ticks: { font: { size: 14 } } }
+          },
+          plugins: {
+            legend: { display: false },
+            tooltip: { enabled: true },
+            title: {
+              display: true,
+              text: `Distribución de bancas (${totalBancas} en total)`,
+              font: { size: 16 }
+            }
+          }
+        }
+      });
+    }
+
+    function descargarGrafico() {
+      if (!chart) return alert("Primero generá el gráfico.");
+      const enlace = document.createElement('a');
+      enlace.download = 'resultado_dhont_barras.png';
+      enlace.href = chart.toBase64Image();
+      enlace.click();
+    }
+
+    function limpiarCampos() {
+      document.getElementById("votosBlancos").value = 0;
+      document.getElementById("totalBancas").value = 35;
+      document.getElementById("resultado").textContent = "";
+      document.getElementById("tablaPartidos").innerHTML = `
+        <tr><th>Lista / Frente</th><th>Votos</th></tr>
+        <tr><td><input type="text" value="Frente A"></td><td><input type="number" value="250000"></td></tr>
+        <tr><td><input type="text" value="Frente B"></td><td><input type="number" value="200000"></td></tr>
+        <tr><td><input type="text" value="Frente C"></td><td><input type="number" value="50000"></td></tr>
+      `;
+      if (chart) {
+        chart.destroy();
+        chart = null;
+      }
+    }
+  </script>
+</body>
+</html>
